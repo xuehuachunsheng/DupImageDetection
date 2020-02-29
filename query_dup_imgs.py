@@ -8,7 +8,7 @@ parser.add_argument('--input_path', help='The file path of an image or an image 
 
 parser.add_argument('--img_base_path', help='The file path stores the phash index of image base')
 
-parser.add_argument('--sim_thres', default=1, help='If the number of different digits of two images is less or equal than sim_thres, they are duplicated.')
+parser.add_argument('--sim_thres', type=int, default=1, help='If the number of different digits of two images is less or equal than sim_thres, they are duplicated.')
 
 parser.add_argument('--output_path', default='', help='The output result is a json file in which stores the duplicated images of input_path in img_base_path. '
                                                       'It is a dict. The key is an input image absolute path, and the corresponding value is the list of duplicated images.'
@@ -34,28 +34,32 @@ assert queried_imgs is not None, 'Error. The input is not an image or image dire
 
 import imagehash
 from PIL import Image
+from PIL import ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 re_json = {}
 n_split = 4
 for image in queried_imgs:
     re_json[image] = set()
     print('Query {}'.format(image))
     c_hash = imagehash.phash(Image.open(image))
+    c_hash = str(c_hash)
     c_hash_bin = '{:064d}'.format(int(bin(int(c_hash, 16))[2:]))
     for i in range(n_split):
         c_part = c_hash[i*int(16/n_split):(i+1)*int(16/n_split)]
         if c_part in base[i]:
-            for may_dup_img in base[i]['c_part']:
+            for may_dup_img in base[i][c_part]:
                 if may_dup_img in re_json[image]: continue
                 ano_hash = imagehash.phash(Image.open(may_dup_img))
+                ano_hash = str(ano_hash)
                 ano_hash_bin = '{:064d}'.format(int(bin(int(ano_hash, 16))[2:]))
                 num_diff = sum([c_hash_bin[i] != ano_hash_bin[i] for i in range(64)])
                 if num_diff <= int(FLAGS.sim_thres):
                     re_json[image].add(may_dup_img)
 
-json.dump(re_json, open(FLAGS.output_path, 'w'))
+class SetEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, set):
+            return list(obj)
+        return json.JSONEncoder.default(self, obj)
 
-
-
-
-
-
+json.dump(re_json, open(FLAGS.output_path, 'w'), cls=SetEncoder)
